@@ -4,6 +4,9 @@ meta:
   xref:
     forensicswiki: Shell Item
   license: CC0-1.0
+  imports:
+    - dos_datetime
+  encoding: windows-1257
   endian: le
 doc: |
   Windows Shell Items (AKA "shellbags") is an undocumented set of
@@ -65,7 +68,7 @@ types:
         type: u1
       - id: shell_folder_id
         size: 16
-      # TODO: various extensions
+      # TODO: Extension block 0xbeef0017 if size > 20
   volume_body:
     doc-ref: 'https://github.com/libyal/libfwsi/blob/master/documentation/Windows%20Shell%20Item%20format.asciidoc#33-volume-shell-item'
     seq:
@@ -74,15 +77,33 @@ types:
   file_entry_body:
     doc-ref: 'https://github.com/libyal/libfwsi/blob/master/documentation/Windows%20Shell%20Item%20format.asciidoc#34-file-entry-shell-item'
     seq:
-      - type: u1
+      - size: 1
       - id: file_size
         type: u4
-      - id: last_mod_time
-        type: u4
+      - id: modified
+        type: dos_datetime
       - id: file_attrs
         type: u2
+      - id: short_unicode_name
+        type: terminated_utf16le(0)
+        if: has_unicode_name
+      - id: short_ansi_name
+        terminator: 0
+        if: not has_unicode_name
+      - id: zero_padding
+        size: (2 - _io.pos) % 2
+      - id: ext_blocks
+        type: extension_block
+        repeat: until
+        repeat-until: _io.pos >= _io.size - 2
+        if: ext_offset > 0
     instances:
       is_dir:
         value: _parent.class_type & 0x01 != 0
       is_file:
         value: _parent.class_type & 0x02 != 0
+      has_unicode_name:
+        value: class_type & 0x04 != 0
+      ext_offset:
+        pos: _io.size - 2
+        type: u2
