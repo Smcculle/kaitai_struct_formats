@@ -139,3 +139,172 @@ types:
         type: str
         encoding: utf-16le
         if: len_str > 0
+
+  extension_block:
+    doc: Implementation of extension block types.
+    doc-ref: https://github.com/libyal/libfwsi/blob/master/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0000
+    seq:
+      - id: len_data
+        type: u2
+      - id: version
+        type: u2
+      - id: signature
+        type: u4
+        enum: signature
+      - id: data
+        size: len_data - 8
+        type:
+          switch-on: signature
+          cases:
+            'signature::beef0003': beef0003
+            'signature::beef0004': beef0004
+            'signature::beef0005': beef0005
+            'signature::beef0006': beef0006
+            'signature::beef0008': beef0008
+            'signature::beef001a': beef001a
+            'signature::beef001b': beef001a
+    enums:
+      signature:
+        0xBEEF0003: beef0003
+        0xBEEF0004: beef0004
+        0xBEEF0005: beef0005
+        0xBEEF0006: beef0006
+        0xBEEF0008: beef0008
+        0xBEEF001A: beef001a
+        0xBEEF001B: beef001b
+
+    types:
+      file_ref:
+        doc: NTFS file reference
+        seq:
+          - id: entry_index
+            size: 6
+          - id: sequence_number
+            type: u2
+
+
+      beef0000:
+        doc: |
+          This block has been reported to have either size 6 or 34. When the
+          size is 34, it contains two UUIDs (16 + 16) and the standard 2-byte
+          extension block footer. Structure is similar to beef0019.
+        instances:
+          uuid1:
+            pos: 0
+            size: 16
+            if: _io.size == 34
+          uuid2:
+            pos: 0x10
+            size: 16
+            if: _io.size == 34
+
+      beef0003:
+        seq:
+          - id: uuid
+            size: 16
+
+      beef0004:
+        seq:
+          - id: created
+            type: dos_datetime
+          - id: accessed
+            type: dos_datetime
+          - id: identifier
+            type: u2
+          - size: 2
+            doc: Empty
+            if: version >= 0x0007
+          - id: mft_ref
+            type: file_ref
+            if: version >= 0x0007
+          - size: 8
+            doc: Unknown
+            if: version >= 0x0007
+          - id: localized_name_size
+            type: u2
+            if: version >= 0x0003
+          - size: 4
+            doc: Empty
+            if: version >= 0x0009
+          - size: 4
+            doc: Unknown
+            if: version >= 0x0008
+          - id: long_name_block_
+            type: terminated_utf16le(0)
+          - id: localized_name_block_
+            type: terminated_utf16le(0)
+            if: has_localized_name_
+          - id: ext_block_offset
+            type: u2
+        instances:
+          version:
+            value: _parent.version
+          has_localized_name_:
+            value: version >= 0x0003 and localized_name_size > 0
+          ext_block_name:
+            value: long_name_block_.as_string
+          localized_name:
+            value: localized_name_block_.as_string
+
+      beef0005:
+        seq:
+          - id: uuid
+            size: 16
+          - id: shitem_list
+            size-eos: true
+            type: windows_shell_items
+
+      beef0006:
+        seq:
+          - id: name_block_
+            type: terminated_utf16le(0)
+        instances:
+          ext_block_name:
+            value: name_block_.as_string
+
+      beef0008:
+        seq:
+          - size: 8
+            doc: Unknown
+          - id: deleted
+            type: u8
+            doc: Number of 100-nanosecond intervals since 1601
+          - size: 4
+            doc: Unknown, possible version string
+          - id: original_path_full_
+            type: terminated_utf16le(0)
+            doc: Terminated by an unknown 2 bytes that are non-empty
+          - id: recycle_path
+            type: str
+            encoding: utf-16
+            size: _parent.len_data - _io.pos - 10
+            doc: |
+              Recycle bin path takes up the remaining length of the
+              extension block, leaving 2 bytes for the ending sequence. Since
+              the data section has an 8-byte header, we subtract 10 from the
+              size.
+        instances:
+          original_path:
+            # Trim unknown character at the end
+            value: original_path_full_.as_string.substring(0, original_path_full_.as_string.length - 1)
+
+      beef001a:
+        doc: |
+          This extension block has been seen in lnk files. Seen to
+          share the same format as beef001b.
+        seq:
+          - size: 2
+          - id: name_block_
+            type: terminated_utf16le(0)
+          - id: shitem_list
+            repeat: until
+            repeat-until: _io.pos > _io.size - 2
+            type: windows_shell_items
+            if: _io.pos < _io.size - 2
+            doc: |
+              Repeat until the last 2 bytes, which should be the first
+              extension block offset. May not be present.
+          - size: 2
+        instances:
+          ext_block_name:
+            value: name_block_.as_string
