@@ -38,19 +38,26 @@ types:
         if: len_data >= 2
   shell_item_data:
     seq:
-      - id: code
+      - id: class_type
         type: u1
-      - id: body1
+        doc: |
+          Class type is a combination of a type, subtype, and flags. It has not
+          proven to be foolproof for all shell items, but appears to be a
+          strong one for known formats. Shell items fall into 2 broad categories
+          of type-based items or signature-base items, with most signature
+          items having a class_type of 0x00.
+      - id: body
         type:
-          switch-on: code
+          switch-on: switch_value
           cases:
             0x1f: root_folder_body
-      - id: body2
-        type:
-          switch-on: code & 0x70
-          cases:
             0x20: volume_body
             0x30: file_entry_body
+    instances:
+      mask_type:
+        value: class_type & 0x70
+      switch_value:
+        value: 'mask_type == 0x20 or mask_type == 0x30 or mask_type == 0x40 ? mask_type : class_type'
   root_folder_body:
     doc-ref: 'https://github.com/libyal/libfwsi/blob/master/documentation/Windows%20Shell%20Item%20format.asciidoc#32-root-folder-shell-item'
     seq:
@@ -76,6 +83,6 @@ types:
         type: u2
     instances:
       is_dir:
-        value: _parent.code & 0x01 != 0
+        value: _parent.class_type & 0x01 != 0
       is_file:
-        value: _parent.code & 0x02 != 0
+        value: _parent.class_type & 0x02 != 0
