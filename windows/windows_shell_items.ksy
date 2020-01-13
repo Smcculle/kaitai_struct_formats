@@ -103,7 +103,39 @@ types:
       is_file:
         value: _parent.class_type & 0x02 != 0
       has_unicode_name:
-        value: class_type & 0x04 != 0
+        value: _parent.class_type & 0x04 != 0
       ext_offset:
         pos: _io.size - 2
         type: u2
+
+  terminated_utf16le:
+    doc: Modified hack from windows_resource_file.ksy to read utf-16le string.
+    doc-ref: https://github.com/kaitai-io/kaitai_struct_formats/blob/master/windows/windows_resource_file.ksy
+    params:
+      - id: terminator_value
+        type: u2
+    seq:
+      - id: save_start_noop
+        size: 0
+        if: save_start >= 0  # Save starting offset
+      - id: rest
+        type: u2
+        repeat: until
+        repeat-until: _ == terminator_value
+      - id: save_end_noop
+        size: 0
+        if: save_end >= 0  # Save ending offset
+    instances:
+      # Super dirty hack saves start/end positions to re-read it as string
+      save_start:
+        value: _io.pos
+      save_end:
+        value: _io.pos
+      len_str:
+        value: 'save_end - save_start - 2'
+      as_string:
+        pos: save_start
+        size: len_str
+        type: str
+        encoding: utf-16le
+        if: len_str > 0
